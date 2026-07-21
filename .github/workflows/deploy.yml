@@ -1,20 +1,38 @@
-# Lyra Extractor Deployer
+# Lyra extractor deployer
+#
+# Every night (and on demand), this fetches the LATEST code of
+# alexeichhorn/YouTubeKit-Server and deploys it to YOUR Cloudflare Workers
+# account. Nothing is mirrored, so nothing can drift: your Worker is always
+# <24h behind Alex's newest fix.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   CLOUDFLARE_API_TOKEN   - token made with the "Edit Cloudflare Workers" template
+#   CLOUDFLARE_ACCOUNT_ID  - from the Workers & Pages overview sidebar
 
-Auto-deploys the latest [alexeichhorn/YouTubeKit-Server](https://github.com/alexeichhorn/YouTubeKit-Server)
-to your own Cloudflare Workers account, nightly. Serves as Lyra's second
-audio-extraction fallback: `[.local, this worker, Alex's public server]`.
+name: Deploy latest YouTubeKit-Server
+on:
+  schedule:
+    - cron: "0 4 * * *"   # nightly, 04:00 UTC (~06:00 in Stockholm)
+  workflow_dispatch:        # manual "Run workflow" button
 
-## Setup (one time)
-1. Cloudflare: free account → register a `*.workers.dev` subdomain
-   (Workers & Pages page prompts you) → copy your **Account ID** (sidebar)
-   → My Profile → API Tokens → Create Token → template
-   **"Edit Cloudflare Workers"** → copy the token.
-2. This repo: Settings → Secrets and variables → Actions → add
-   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-3. Actions tab → "Deploy latest YouTubeKit-Server" → **Run workflow**.
-4. When green: your Worker lives at
-   `https://youtubekit-server.<your-subdomain>.workers.dev`
-   → paste that URL into `Secrets.ownRemoteExtractorURL` in Lyra.
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch latest upstream source
+        run: git clone --depth 1 https://github.com/alexeichhorn/YouTubeKit-Server.git server
 
-Uses SQLite-backed Durable Objects (works on Cloudflare's FREE plan).
-Built-in per-app rate limit: 5,000 requests/day — far above Lyra's needs.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Deploy to Cloudflare Workers
+        working-directory: server
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
